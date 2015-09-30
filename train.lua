@@ -166,9 +166,8 @@ function rescale(img, scale)
 end
 
 ------------------------
-function load_style_images(cpu_model, style_weights, style_image, 
+function load_style_images(gpu_model, style_weights, style_image, 
                style_folder, slice_size)
-  gpu_model = cpu_model:cuda()
   if style_folder ~= "none" then 
    if string.sub(style_folder, -1) ~= '/' then
       style_folder = style_folder ..'/'
@@ -188,14 +187,12 @@ function load_style_images(cpu_model, style_weights, style_image,
    end
   end
   if style_image ~= "none" then 
-    local art = preprocess( image.load(style_image), slice_size)
-    if not opt.cpu then
-        art = art:cuda()
-    end
-    -- slice(art, slice_size, slice_size/5, gpu_model)
-    gpu_model:forward(art)
+    local art = preprocess( image.load(style_image), 0)
+    slice(art, slice_size, slice_size/2, gpu_model)
+    --gpu_model:forward(art)
     art = nil
   end
+  
   local _, art_grams = collect_activations(gpu_model, {}, style_weights)
   collectgarbage()
   return gpu_model, art_grams
@@ -210,7 +207,9 @@ function new_model(style_image, style_folder, scale)
          error('')
   end
   local cpu_model = create_vgg(vgg_path, opt.backend)
+  print('cpu conv1_1 ', cpu_model.modules['conv1_1'])
   local gpu_model = cpu_model:cuda()
+  print('gpu conv1_1 ', gpu_model.modules['conv1_1'])
   gpu_model, art_grams = load_style_images(gpu_model, style_weights, 
                                            style_image, style_folder, scale)
   cpu_model = gpu_model:float()

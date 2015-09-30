@@ -40,6 +40,8 @@ paths.dofile('train.lua')
 
 
 function slice(img, slice_size, overlap, model_to_train)
+   --  assume img is in CPU
+   --  assume model is either nil or a GPU model
   print("slicing for style: ", model_to_train ~= nil)
   local height = img:size()[2]
   local width = img:size()[3]
@@ -57,12 +59,12 @@ function slice(img, slice_size, overlap, model_to_train)
       print('slicing w,h,right,bottom', w, h,right,bottom)
       if model_to_train ~= nil then
         if right-w >=slice_size and bottom-h >=slice_size then
-          local subimage = image.crop(img, w,h, right, bottom)
+          local subimage = image.crop(img, w,h, right, bottom):cuda()
           model_to_train:forward(subimage)
           collectgarbage()
         end
       else 
-        local subimage = image.crop(img, w,h, right, bottom)
+        local subimage = image.crop(img, w,h, right, bottom):cuda()
         fname = 'tmp/tmp_'..j..'_'..i..'.jpg'
         image.save(fname, subimage)
         result[i][j] = fname
