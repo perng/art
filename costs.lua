@@ -4,7 +4,6 @@
 
 -- compute the Gramian matrix for input
 function gram(input)
-    print('input size=', input:size())
     local k = input:size(2)
     local flat = input:view(k, -1)
     local gram = torch.mm(flat, flat:t())
@@ -15,7 +14,6 @@ function collect_activations(model, activation_layers, gram_layers)
     local activations, grams = {}, {}
     for i, module in ipairs(model.modules) do
         local name = module._name
-        print('module name = ', name)
         if name then
             if activation_layers[name] then
                 local activation = module.output.new()
@@ -25,7 +23,6 @@ function collect_activations(model, activation_layers, gram_layers)
             end
 
             if gram_layers[name] then
-                print("module.output=", module.output)
                 grams[name] = gram(module.output):view(-1)
             end
         end

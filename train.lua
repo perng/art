@@ -116,12 +116,13 @@ function iterate(xmodel, input, content_image)
   end
 
   -- optimize
+  local losses ={}
   for i = 1, opt.num_iters do
   
     -- local _, loss = optim[opt.optimizer](opfunc_closure(xmodel), input, optim_state)
     local _, loss = optim[opt.optimizer](opfunc_closure(xmodel), input, optim_state)
     loss = loss[1]
-
+    losses[i] = loss
     -- anneal learning rate
     if opt.optimizer == 'sgd' and i % 100 == 0 then
         optim_state.learningRate = 0.75 * optim_state.learningRate
@@ -131,14 +132,10 @@ function iterate(xmodel, input, content_image)
         printf('iter %5d\tloss %8.2e\tlr %8.2e\ttime %4.1f\n',
             i, loss, optim_state.learningRate, timer:time().real)
     end
+    if i>20 and losses[i]/losses[i-10] > 0.96 then
+      break
+    end  
 
-    if i % 20 == 0 then
-        if opt.display_interval > 0 and i % opt.display_interval == 0 then
-            output = depreprocess(input):double()
-            image.display(output)
-        end
-        -- image.save(paths.concat(frames_dir, i .. '.jpg'), output)
-    end
   end
 
   output = depreprocess(input)
@@ -176,18 +173,16 @@ function load_style_images(gpu_model, style_weights, style_image,
    for f in io.popen("ls ".. style_folder ):lines() do
      f = string.gsub(f, " ", "\\ ")
      print("Load style file " .. style_folder..f)
-     local art = preprocess( image.load(style_folder..f), slice_size)
-     if not opt.cpu then
-         art = art:cuda()
-     end
-     --slice(art, slice_size, slice_size/5, gpu_model)
-     gpu_model:forward(art)
+     local art = image.load(style_folder..f)
+        
+     slice(art, slice_size, slice_size/2, gpu_model)
+     --gpu_model:forward(art)
      art = nil
      collectgarbage()
    end
   end
   if style_image ~= "none" then 
-    local art = preprocess( image.load(style_image), 0)
+    local art = image.load(style_image)
     slice(art, slice_size, slice_size/2, gpu_model)
     --gpu_model:forward(art)
     art = nil
@@ -207,9 +202,7 @@ function new_model(style_image, style_folder, scale)
          error('')
   end
   local cpu_model = create_vgg(vgg_path, opt.backend)
-  print('cpu conv1_1 ', cpu_model.modules['conv1_1'])
   local gpu_model = cpu_model:cuda()
-  print('gpu conv1_1 ', gpu_model.modules['conv1_1'])
   gpu_model, art_grams = load_style_images(gpu_model, style_weights, 
                                            style_image, style_folder, scale)
   cpu_model = gpu_model:float()
@@ -221,12 +214,12 @@ end
 ------------------------
 
 function train(content_image,  cpu_model)
-  content_image_gpu = image.load(content_image):cuda()
+  content_image_cpu = image.load(content_image)
   gpu_model = cpu_model:cuda()
   
-  img, img_activations = load_content_image(gpu_model,content_weights , content_image_gpu)
+  img, img_activations = load_content_image(gpu_model,content_weights , content_image_cpu)
   input = get_input(img)
-  output = iterate(gpu_model, input, content_image_gpu)
+  output = iterate(gpu_model, input, content_image_cpu:cuda())
   -- image.save('final-' .. content_image, output)
   cpu_model = nil 
   gpu_model = nil 

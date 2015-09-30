@@ -16,14 +16,14 @@ cmd:text('A Neural Algorithm of Artistic Style')
 cmd:text()
 cmd:text('Options:')
 cmd:option('--content', 'none', 'content image')
-cmd:option('--slice_size',  400,  'slice size')
+cmd:option('--slice_size',  475,  'slice size')
 cmd:option('--overlap_size',  50,  'overlap size')
 cmd:option('--content',         'none',   'Path to content image')
 cmd:option('--style',         'none',   'style image')
 cmd:option('--sfolder',         'none',   'style image folder')
 
 cmd:option('--style_factor',     2e9,     'Trade-off factor between style and content')
-cmd:option('--num_iters',        80,     'Number of iterations')
+cmd:option('--num_iters',        200,     'Number of iterations')
 cmd:option('--size',             500,     'Length of image long edge (0 to use original content size)')
 cmd:option('--display_interval', 0,      'Iterations between image displays (0 to suppress display)')
 cmd:option('--smoothness',       0,       'Total variation norm regularization strength (higher for smoother output)')
@@ -42,8 +42,7 @@ paths.dofile('train.lua')
 function slice(img, slice_size, overlap, model_to_train)
    --  assume img is in CPU
    --  assume model is either nil or a GPU model
-  print("slicing for style: ", model_to_train ~= nil)
-  local height = img:size()[2]
+  local height = img:size(2)
   local width = img:size()[3]
   local step = slice_size - overlap
   local i=0
@@ -56,10 +55,9 @@ function slice(img, slice_size, overlap, model_to_train)
     for h=0, height, step do
       j=j+1
       local bottom = math.min(height-1, h+ slice_size)
-      print('slicing w,h,right,bottom', w, h,right,bottom)
       if model_to_train ~= nil then
-        if right-w >=slice_size and bottom-h >=slice_size then
-          local subimage = image.crop(img, w,h, right, bottom):cuda()
+        if right-w >=overlap and bottom-h >=overlap then
+          local subimage = preprocess(image.crop(img, w,h, right, bottom),0):cuda()
           model_to_train:forward(subimage)
           collectgarbage()
         end
@@ -76,9 +74,6 @@ function slice(img, slice_size, overlap, model_to_train)
 end
 
 function hcombine2(img1, img2, overlap)
-  print('hcombine')
-  print ("img1", img1:size())
-  print ("img2", img2:size())
   if img1:size()[2] ~= img2:size()[2] then
     print("Height not equal")
     return
@@ -106,21 +101,16 @@ end
 
 
 function vcombine2(img1, img2, overlap)
-  print('vcombine')
   if img1:size()[3] ~= img2:size()[3] then
     print("Width not equal")
     return
   end
   
-  print('img1:', img1:size())
-  print('img2:', img2:size())
   
   if img2:size()[2] < overlap then
     return img1
   end
   local width = img1:size()[3]
-  print('img1:', img1:size())
-  print(" width, img1:size()[2]-overlap ",  width, img1:size()[2]-overlap )
   
   local img11 =    image.crop(img1,0,0, width, img1:size()[2]-overlap )
   local img1over = image.crop(img1, 0,  img1:size()[2]-overlap, width,  img1:size()[2])
@@ -147,13 +137,9 @@ function combine(imgs, overlap)
   local first = true
   local result
   for i=1, #imgs do
-    print('imgs[i][1]', imgs[i][1])
     local img = image.load(imgs[i][1])
-    print("img:", img:size())
     for j=2, #imgs[1] do
-      print('imgs[i][j]', imgs[i][j])
       img2= image.load(imgs[i][j])
-      print("img2:", img2:size())
       img = vcombine2(img, img2, overlap)
     end
     if first then
@@ -170,7 +156,8 @@ end
 
 local means = { 104, 117, 123 }
 
-function preprocess(img, scale)   
+function preprocess(img, scale)  
+   -- img is 3-d with 
     local w, h = img:size(3), img:size(2)
 
     if scale>0 then
@@ -183,7 +170,7 @@ function preprocess(img, scale)
     end
 
     -- reverse channels
-    local copy = torch.CudaTensor(img:size())
+    local copy = torch.FloatTensor(img:size())
     copy[1] = img[3]
     copy[2] = img[2]
     copy[3] = img[1]
