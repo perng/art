@@ -133,8 +133,8 @@ function iterate(xmodel, input, content_image)
     end
 
     if i % 20 == 0 then
-        output = depreprocess(input):double()
         if opt.display_interval > 0 and i % opt.display_interval == 0 then
+            output = depreprocess(input):double()
             image.display(output)
         end
         -- image.save(paths.concat(frames_dir, i .. '.jpg'), output)

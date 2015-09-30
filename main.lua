@@ -19,6 +19,9 @@ cmd:option('--content', 'none', 'content image')
 cmd:option('--slice_size',  400,  'slice size')
 cmd:option('--overlap_size',  50,  'overlap size')
 cmd:option('--content',         'none',   'Path to content image')
+cmd:option('--style',         'none',   'style image')
+cmd:option('--sfolder',         'none',   'style image folder')
+
 cmd:option('--style_factor',     2e9,     'Trade-off factor between style and content')
 cmd:option('--num_iters',        80,     'Number of iterations')
 cmd:option('--size',             500,     'Length of image long edge (0 to use original content size)')
@@ -230,11 +233,13 @@ end
 
 -------------------------------------------------------------------
 function main()
-  local img = image.load('small_mona_lisa.jpg')
+  local img = image.load(opt.content)
   imgs = slice(img, 400, 50)
   img=nill
 
-  cpu_model = new_model( 'none', 'styles/glass_art', 400)
+  -- cpu_model = new_model( 'styles/renoir/the_reading.jpg', 'none', 400)
+  -- cpu_model = new_model( 'none', 'styles/colors',  400)
+  cpu_model = new_model( opt.style, opt.sfolder, 400)
   local k=1
   local total = #imgs * #imgs[1]
   
@@ -243,16 +248,13 @@ function main()
        print("image ", k, ' of ', total)
        k=k+1 
        imgs[i][j] = train(imgs[i][j],  cpu_model)
-      --if (i < #imgs/2) then
-      -- imgs[i][j] = train(imgs[i][j],  "styles/starry_night.jpg", 'none', 400)
-      --else 
-      -- imgs[i][j] = train(imgs[i][j],  "styles/the_scream.jpg", 'none', 400)
-      --end
     end
   end
+
+
   result = combine(imgs, 50)
-  image.save("out.jpg", result)
-  image.display(result)
+  image.save("out-".. opt.content, result)
+  --image.display(result)
   --train('tardis.jpg', 'monalisa.jpg', 'none')
   --train('monalisa.jpg',  'tardis.jpg', 'none')
 end
