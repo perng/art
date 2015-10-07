@@ -16,15 +16,14 @@ cmd:text('A Neural Algorithm of Artistic Style')
 cmd:text()
 cmd:text('Options:')
 cmd:option('--content', 'none', 'content image')
-cmd:option('--slice_size',  475,  'slice size')
-cmd:option('--overlap_size',  50,  'overlap size')
-cmd:option('--content',         'none',   'Path to content image')
 cmd:option('--style',         'none',   'style image')
 cmd:option('--sfolder',         'none',   'style image folder')
 
 cmd:option('--style_factor',     2e9,     'Trade-off factor between style and content')
 cmd:option('--num_iters',        200,     'Number of iterations')
-cmd:option('--size',             500,     'Length of image long edge (0 to use original content size)')
+cmd:option('--size',             0,     'Length of image long edge (0 to use original content size)')
+cmd:option('--slice',             460,     'Slice size')
+cmd:option('--overlap',           75,     'overlap size')
 cmd:option('--display_interval', 0,      'Iterations between image displays (0 to suppress display)')
 cmd:option('--smoothness',       0,       'Total variation norm regularization strength (higher for smoother output)')
 cmd:option('--init',            'image',  '{image, random}. Initialization mode for optimized image.')
@@ -44,9 +43,11 @@ function slice(img, slice_size, overlap, model_to_train)
    --  assume model is either nil or a GPU model
   local height = img:size(2)
   local width = img:size()[3]
+
   local step = slice_size - overlap
   local i=0
   local result = {}
+ 
   for w =0, width, step do
     local right = math.min(width-1, w+slice_size)    
     i=i+1
@@ -63,7 +64,7 @@ function slice(img, slice_size, overlap, model_to_train)
         end
       else 
         local subimage = image.crop(img, w,h, right, bottom):cuda()
-        fname = 'tmp/tmp_'..j..'_'..i..'.jpg'
+        local fname = 'tmp/tmp_'..j..'_'..i..'.jpg'
         image.save(fname, subimage)
         result[i][j] = fname
       end
@@ -77,6 +78,10 @@ function hcombine2(img1, img2, overlap)
   if img1:size()[2] ~= img2:size()[2] then
     print("Height not equal")
     return
+  end
+
+  if img2:size(3) < overlap then
+    return img1
   end
   
   local height = img1:size()[2]
@@ -106,7 +111,9 @@ function vcombine2(img1, img2, overlap)
     return
   end
   
-  
+  if img2:size(2) < overlap then
+    return img1
+  end
   if img2:size()[2] < overlap then
     return img1
   end
@@ -200,53 +207,117 @@ function depreprocess(img)
 end
 
 
-function mainx()
-  --local img = image.load('smallmonalisa.jpg')
-  --slice(img)
-q2=image.load('tardis_160.jpg')  
-q1=image.load('munch.jpg')
-q1=image.scale(q1, q2:size()[3], q2:size()[2])
---itorch.image(q1)
---itorch.image(q2)
-local overlap = 100 
-g1 = image.crop(q2,0,0,600,546 )
-image.save("g1.jpg", g1)
---itorch.image(g1)
-g2 = image.crop(q1,370,0, 970, 546 )
-image.save("g2.jpg", g2)
---itorch.image(g2)
-  local result= hcombine2(g1,g2, 230)
-  print("result", result:size())
-  
-end
-
 -------------------------------------------------------------------
-function main()
+function run(prefix)
   local img = image.load(opt.content)
-  imgs = slice(img, 400, 50)
+  if opt.size ~= nill and opt.size >0 then
+    img = image.scale(img, opt.size)
+  end
+
+  imgs = slice(img, opt.slice, opt.overlap, nil)
+ 
   img=nill
 
   -- cpu_model = new_model( 'styles/renoir/the_reading.jpg', 'none', 400)
   -- cpu_model = new_model( 'none', 'styles/colors',  400)
-  cpu_model = new_model( opt.style, opt.sfolder, 400)
+   cpu_model = new_model( opt.style, opt.sfolder, opt.slice, style_weights)
   local k=1
   local total = #imgs * #imgs[1]
   
+  --cpu_model = new_model('styles/Seurat_SundayAfternoonOnTheIslandOfGrandJatte.jpg' , 'none', opt.slice)
   for i=1, #imgs do
     for j = 1, #imgs[1] do
        print("image ", k, ' of ', total)
-       k=k+1 
-       imgs[i][j] = train(imgs[i][j],  cpu_model)
+   --    if (i< #imgs/2 ) then
+         imgs[i][j] = train(imgs[i][j],  cpu_model)
+         k=k+1 
+    --   end
     end
   end
 
 
-  result = combine(imgs, 50)
-  image.save("out-".. opt.content, result)
+  result = combine(imgs, opt.overlap)
+  image.save("out/" .. prefix .. opt.content  , result)
   --image.display(result)
   --train('tardis.jpg', 'monalisa.jpg', 'none')
   --train('monalisa.jpg',  'tardis.jpg', 'none')
 end
 
-main()
 
+
+function setLayer(num, layer_list, output_layers)
+    -- returns a table of bits, most significant first.
+    bits = #layer_list
+    local name = ""
+    
+    for b=bits,1,-1 do
+        w=math.fmod(num,2)
+        output_layers[layer_list[b]]=w
+        num=(num-w)/2
+        if w>0 then
+          name = layer_list[b] .. '-' .. name 
+        end
+    end
+    return name    
+end
+
+
+style_weights = {
+        ['conv1_1'] = 1,
+        ['conv2_1'] = 1,
+        ['conv3_1'] = 1,
+        ['conv3_2'] = 1,
+        ['conv4_1'] = 1,
+        ['conv5_1'] = 1,
+  }
+content_weights = {
+        ['conv4_2'] = 1,
+  }
+
+local low_layers = {'conv1_2','conv2_2','conv3_2','conv3_3',
+   'conv3_4', 'conv4_1', 'conv5_1' }
+
+local high_layers = {'conv4_1','conv4_2','conv4_3','conv4_4','conv5_1','conv5_2',
+   'conv5_3','conv5_4'}
+
+function setLayer(num, layer_list, output_layers)
+    -- returns a table of bits, most significant first.
+    bits = #layer_list
+    local name = ""
+    for b=bits,1,-1 do
+        w=math.fmod(num,2)
+        output_layers[layer_list[b]]=w
+        num=(num-w)/2
+        if w>0 then
+          name = layer_list[b] .. '-' .. name 
+        end
+    end    
+    return name:gsub('conv','') 
+end
+
+style_weight_sum = 0
+content_weight_sum = 0
+for k, v in pairs(content_weights) do
+    content_weight_sum = content_weight_sum + v
+end
+for k, v in pairs(style_weights) do
+  style_weight_sum = style_weight_sum + v
+end
+run('uno-')
+
+
+--
+--for i = 0, 2^#low_layers do
+--  name = setLayer(i, low_layers, style_weights)
+--  print('name', name)
+--  style_weight_sum = 0
+--  for k, v in pairs(style_weights) do
+--    style_weight_sum = style_weight_sum + v
+--  end
+--  if style_weight_sum == 0 then
+--    print('sum 0')
+--    break   
+--  end
+--  
+--  run(name)
+--end

@@ -2,27 +2,6 @@
 local pl = require('pl.import_into')()
 local printf = pl.utils.printf
 
-local  style_weights = {
-        ['conv1_1'] = 1,
-        ['conv2_1'] = 1,
-        ['conv3_1'] = 1,
-        ['conv4_1'] = 1,
-        ['conv5_1'] = 1,
-  }
-local  content_weights = {
-        ['conv4_2'] = 1,
-  }
-
-  local style_weight_sum = 0
-  local content_weight_sum = 0
-  for k, v in pairs(style_weights) do
-    style_weight_sum = style_weight_sum + v
-  end
-
-  for k, v in pairs(content_weights) do
-    content_weight_sum = content_weight_sum + v
-  end
-
 
 function opfunc_closure(model)
   local wmodel = model
@@ -162,6 +141,21 @@ function rescale(img, scale)
     return img
 end
 
+function style_image_process(img_name, slice_size, gpu_model)
+    local original = image.load(img_name)
+    scale =  math.max(original:size()[2],original:size()[3])
+    while scale > opt.slice do
+      for theta = 0, 359, 30 do
+         print(img_name, scale) 
+         img= image.scale(original, scale)
+         img= image.rotate(img, theta)
+         slice(img, slice_size, slice_size/2, gpu_model)
+      end
+      scale = scale * 0.75
+      break
+    end
+end
+
 ------------------------
 function load_style_images(gpu_model, style_weights, style_image, 
                style_folder, slice_size)
@@ -173,17 +167,12 @@ function load_style_images(gpu_model, style_weights, style_image,
    for f in io.popen("ls ".. style_folder ):lines() do
      f = string.gsub(f, " ", "\\ ")
      print("Load style file " .. style_folder..f)
-     local art = image.load(style_folder..f)
-        
-     slice(art, slice_size, slice_size/2, gpu_model)
-     --gpu_model:forward(art)
-     art = nil
+     style_image_process(style_folder..f, slice_size, gpu_model)
      collectgarbage()
    end
   end
   if style_image ~= "none" then 
-    local art = image.load(style_image)
-    slice(art, slice_size, slice_size/2, gpu_model)
+    style_image_process(style_image, slice_size, gpu_model)
     --gpu_model:forward(art)
     art = nil
   end
@@ -193,7 +182,7 @@ function load_style_images(gpu_model, style_weights, style_image,
   return gpu_model, art_grams
 end
 ----------------------------------------------------------------
-function new_model(style_image, style_folder, scale)
+function new_model(style_image, style_folder, scale, weights)
   -- load vgg19 model 
   local vgg_path = 'models/vgg_normalized.th'
   if not paths.filep(vgg_path) then
@@ -203,7 +192,7 @@ function new_model(style_image, style_folder, scale)
   end
   local cpu_model = create_vgg(vgg_path, opt.backend)
   local gpu_model = cpu_model:cuda()
-  gpu_model, art_grams = load_style_images(gpu_model, style_weights, 
+  gpu_model, art_grams = load_style_images(gpu_model, weights, 
                                            style_image, style_folder, scale)
   cpu_model = gpu_model:float()
   gpu_model = nil 
